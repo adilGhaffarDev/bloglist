@@ -93,6 +93,46 @@ test('a valid blog cannot be added with no title and url property', async () => 
   expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length)
 })
 
+test('update existing blog', async () => {
+  const blogsAtStart = await helper.blogsInDb()
+  const blogToUpdate = blogsAtStart[0]
+
+  const updatedBlog = {
+    title: blogToUpdate.title,
+    author: blogToUpdate.author,
+    url: blogToUpdate.url,
+    likes: 22
+  }
+  await api
+    .put(`/api/blogs/${blogToUpdate.id}`)
+    .send(updatedBlog)
+    .expect(200)
+    .expect('Content-Type', /application\/json/)
+
+  const blogsAtEnd = await helper.blogsInDb()
+
+  expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length)
+  const likes = blogsAtEnd.map(n => n.likes)
+  expect(likes[0]).toBe(22)
+})
+
+test('delete succeeds with status code 204 if id is valid', async () => {
+  const blogsAtStart = await helper.blogsInDb()
+  const blogToDelete = blogsAtStart[0]
+
+  await api
+    .delete(`/api/blogs/${blogToDelete.id}`)
+    .expect(204)
+
+  const blogsAtEnd = await helper.blogsInDb()
+
+  expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length - 1)
+
+  const urls = blogsAtEnd.map(r => r.url)
+
+  expect(urls).not.toContain(blogToDelete.url)
+})
+
 
 afterAll(() => {
   mongoose.connection.close()
