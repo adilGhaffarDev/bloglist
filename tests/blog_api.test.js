@@ -8,15 +8,6 @@ const bcrypt = require('bcrypt')
 const Blog = require('../models/blog')
 const User = require('../models/user')
 
-beforeEach(async () => {
-  await Blog.deleteMany({})
-
-  for (let blog of helper.initialBlogs) {
-    let blogObject = new Blog(blog)
-    await blogObject.save()
-  }
-})
-
 describe('when there is initially one user in db', () => {
   beforeEach(async () => {
     await User.deleteMany({})
@@ -114,6 +105,34 @@ describe('when there is initially one user in db', () => {
 })
 
 describe('when there is initially some blogs saved', () => {
+  let token = ''
+  beforeEach(async () => {
+    const rootUser = await User.findOne({ username: 'root' })
+    rootUser.blogs = []
+    await rootUser.save()
+    await Blog.deleteMany({})
+    for (let blog of helper.initialBlogs) {
+      let blogObject = new Blog({
+        title: blog.title,
+        author: blog.author,
+        url: blog.url,
+        likes: blog.likes,
+        user: rootUser._id
+      })
+      const savedBlog = await blogObject.save()
+      rootUser.blogs = rootUser.blogs.concat(savedBlog._id)
+      await rootUser.save()
+    }
+    const testUserLogin = {
+      username: 'root',
+      password: 'sekret',
+    }
+    const result = await api
+      .post('/api/login')
+      .send(testUserLogin)
+    token = 'bearer ' + result.body.token
+  })
+
   test('blogs are returned as json', async () => {
     console.log('entered test')
     await api.get('/api/blogs')
@@ -142,16 +161,15 @@ describe('when there is initially some blogs saved', () => {
       url: 'http://blog.cleancoder.com/uncle-bob/2016/05/01/TypeWars.html',
       likes: 2
     }
-
     await api
       .post('/api/blogs')
+      .set('Authorization',token)
       .send(newBlog)
       .expect(200)
       .expect('Content-Type', /application\/json/)
 
     const blogsAtEnd = await helper.blogsInDb()
     expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length + 1)
-
     const urls = blogsAtEnd.map(n => n.url)
     expect(urls).toContain(
       'http://blog.cleancoder.com/uncle-bob/2016/05/01/TypeWars.html'
@@ -167,6 +185,7 @@ describe('when there is initially some blogs saved', () => {
 
     await api
       .post('/api/blogs')
+      .set('Authorization',token)
       .send(newBlog)
       .expect(200)
       .expect('Content-Type', /application\/json/)
@@ -182,9 +201,9 @@ describe('when there is initially some blogs saved', () => {
     const newBlog = {
       author: 'Robert C. Martin'
     }
-
     await api
       .post('/api/blogs')
+      .set('Authorization',token)
       .send(newBlog)
       .expect(400)
 
@@ -205,6 +224,7 @@ describe('when there is initially some blogs saved', () => {
     await api
       .put(`/api/blogs/${blogToUpdate.id}`)
       .send(updatedBlog)
+      .set('Authorization',token)
       .expect(200)
       .expect('Content-Type', /application\/json/)
 
@@ -221,6 +241,7 @@ describe('when there is initially some blogs saved', () => {
 
     await api
       .delete(`/api/blogs/${blogToDelete.id}`)
+      .set('Authorization',token)
       .expect(204)
 
     const blogsAtEnd = await helper.blogsInDb()
@@ -230,6 +251,23 @@ describe('when there is initially some blogs saved', () => {
     const urls = blogsAtEnd.map(r => r.url)
 
     expect(urls).not.toContain(blogToDelete.url)
+  })
+
+  test('unauthorized user cannot post blog', async () => {
+    const newBlog = {
+      title: 'First class tests',
+      author: 'Robert C. Martin',
+      url: 'http://blog.cleancoder.com/uncle-bob/2017/05/05/TestDefinitions.htmll',
+      likes: 12
+    }
+    await api
+      .post('/api/blogs')
+      .set('Authorization','')
+      .send(newBlog)
+      .expect(401)
+
+    const blogsAtEnd = await helper.blogsInDb()
+    expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length)
   })
 })
 
